@@ -23,10 +23,12 @@ const RESEARCH_ENDPOINT = "https://script.google.com/macros/s/AKfycby7rPhPkbhqZa
   }
 
   function invia(par) {
+    // legge SEMPRE i parametri vivi al momento dell'invio (evita di mandare i default)
+    var live = (typeof window.__liveParams === "function") ? window.__liveParams() : par;
     const payload = {
-      eta: par.etaAttuale,
-      versamento: par.versamentoAnnuo,
-      rischio: Math.round(par.volatilita * 100),   // % di volatilita' scelta
+      eta: live.etaAttuale,
+      versamento: live.versamentoAnnuo,
+      rischio: Math.round(live.volatilita * 100),   // % di volatilita' scelta
       ts: new Date().toISOString(),
     };
     // 'no-cors' evita problemi di CORS con Apps Script: invio "fire and forget".

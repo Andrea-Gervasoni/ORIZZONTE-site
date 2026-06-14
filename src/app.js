@@ -164,7 +164,7 @@
   }
 
   // ============ SIMULA ============
-  function simula() {
+  function simula(fromUser) {
     const btn = document.getElementById("btnSimula");
     const label = btn.querySelector(".btn-label");
     btn.disabled = true;
@@ -175,8 +175,9 @@
       renderRisultati(ultimaSim);
       btn.disabled = false;
       label.textContent = t("simula");
-      // eventuale richiesta (anonima, con consenso) di contribuire i dati alla ricerca
-      if (window.__research) window.__research.afterSim(stato.par, stato.lang);
+      // chiedi i dati alla ricerca SOLO dopo una simulazione avviata dall'utente
+      // (mai dalla simulazione automatica al caricamento, che usa i default)
+      if (fromUser && window.__research) window.__research.afterSim(stato.par, stato.lang);
     }, 30);
   }
 
@@ -277,11 +278,14 @@
       });
     });
     // simula
-    document.getElementById("btnSimula").addEventListener("click", simula);
+    document.getElementById("btnSimula").addEventListener("click", () => simula(true));
+
+    // espone i parametri VIVI: la ricerca legge sempre i valori correnti all'invio
+    window.__liveParams = function () { return stato.par; };
 
     buildForm();
     applicaLingua();
-    simula();
+    simula(false);
 
     // ridisegna grafici al resize
     let rt;
