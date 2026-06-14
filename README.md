@@ -85,4 +85,4 @@ This is an **evolving educational prototype**: returns are independent across ye
 ---
 
 **Author:** Andrea Celeste Gervasoni
-**License:** _(optional — e.g. MIT)_
+**License:** MIT
