@@ -88,4 +88,7 @@ Orizzonte è un simulatore Monte Carlo per la pensione integrativa italiana. Inv
 ## Author
 
 Andrea Celeste Gervasoni
-nse:** _(optional — e.g. MIT)_
+
+## License: 
+
+MIT
