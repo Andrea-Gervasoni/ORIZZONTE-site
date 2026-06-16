@@ -4,6 +4,9 @@
  * ========================================================================== */
 (function () {
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // mobile / touch: niente effetti pesanti (blob sfocati, parallasse) per non scaldare il telefono
+  const lowPower = window.matchMedia("(max-width: 880px)").matches
+    || window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
   /* --- 0. SPLASH / schermata di caricamento ----------------------------- */
   (function splash() {
@@ -46,7 +49,7 @@
 
   /* --- 2. Blob morbidi che fluttuano dietro il vetro --------------------- */
   const fluids = document.getElementById("fluids");
-  if (fluids) {
+  if (fluids && !reduce && !lowPower) {
     const oro   = "oklch(0.78 0.10 80 / 0.42)";
     const argilla = "oklch(0.70 0.10 50 / 0.40)";
     const blob = [
@@ -67,7 +70,7 @@
   }
 
   /* --- 3. Parallasse leggero col mouse (profondita') --------------------- */
-  if (!reduce && fluids && window.matchMedia("(hover: hover)").matches) {
+  if (!reduce && !lowPower && fluids && window.matchMedia("(hover: hover)").matches) {
     let tx = 0, ty = 0, cx = 0, cy = 0, raf = null;
     const ambient = document.querySelector(".ambient");
     function loop() {
@@ -118,7 +121,8 @@
     }
     window.__observeReveals = function () {
       els = Array.prototype.slice.call(document.querySelectorAll(".reveal:not(.in)"));
-      check();
+      // mostra subito elementi già in viewport (o sopra il fold)
+      requestAnimationFrame(function() { check(); });
     };
     let ticking = false;
     function onScroll() {
@@ -128,7 +132,8 @@
     }
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll, { passive: true });
-    window.__observeReveals();
+    // mostra subito tutto ciò che è già visibile al caricamento
+    setTimeout(function() { window.__observeReveals(); }, 120);
   })();
 
   /* --- 5. Firma autore: finche' il sito non esiste, mostra un avviso ----- */

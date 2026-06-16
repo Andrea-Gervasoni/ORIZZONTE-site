@@ -9,7 +9,7 @@ window.VERSIONI = [
     id: "v1",
     nome: { it: "Prototipo", en: "Prototype" },
     data: "2026",
-    stato: "attiva",
+    stato: "congelata",            // selezionabile, ma il modello resta intatto
     assunzioni: [
       { it: "Rendimento medio 7%", en: "Mean return 7%" },
       { it: "Volatilità 15%",       en: "Volatility 15%" },
@@ -17,22 +17,24 @@ window.VERSIONI = [
       { it: "Senza costi né tasse", en: "No fees or taxes" },
     ],
     note: {
-      it: "Prima versione: motore Monte Carlo gaussiano portato fedelmente dal C++, percentili 10/50/90 e rendita semplificata.",
-      en: "First version: Gaussian Monte Carlo engine faithfully ported from C++, 10/50/90 percentiles and simplified annuity.",
+      it: "Prima versione storica: motore Monte Carlo gaussiano portato fedelmente dal C++, percentili 10/50/90 e rendita da coefficiente. Resta congelata.",
+      en: "First historic version: Gaussian Monte Carlo engine faithfully ported from C++, 10/50/90 percentiles and coefficient annuity. Kept frozen.",
     },
   },
   {
     id: "v2",
-    nome: { it: "Inflazione & costi", en: "Inflation & fees" },
-    data: null,
-    stato: "in-arrivo",
+    nome: { it: "Realistico", en: "Realistic" },
+    data: "2026",
+    stato: "attiva",
     assunzioni: [
-      { it: "Inflazione reale", en: "Real inflation" },
-      { it: "Costi di gestione", en: "Management fees" },
+      { it: "Rendimenti log-normali", en: "Log-normal returns" },
+      { it: "Costi + tasse annue",    en: "Costs + annual tax" },
+      { it: "Euro di oggi",           en: "Today's euros" },
+      { it: "Deduzione + datore",     en: "Deduction + employer" },
     ],
     note: {
-      it: "In arrivo: inflazione reale, costi di gestione e tassazione dei fondi pensione.",
-      en: "Coming soon: real inflation, management fees and pension-fund taxation.",
+      it: "Modello realistico: rendimenti log-normali, costi di gestione, tassa 20% annua, contributi crescenti e del datore, tassa finale 15→9%, inflazione e deduzione fiscale.",
+      en: "Realistic model: log-normal returns, management costs, 20% annual tax, growing and employer contributions, 15→9% final tax, inflation and tax deduction.",
     },
   },
   {
@@ -62,7 +64,15 @@ window.VERSIONI = [
 
   const V = window.VERSIONI;
   const N = V.length;
-  const activeReal = Math.max(0, V.findIndex(v => v.stato === "attiva"));
+  function versioneAttiva() {
+    return (typeof window.__getVersione === "function" && window.__getVersione()) || "v2";
+  }
+  function indiceAttivo() {
+    const id = versioneAttiva();
+    const i = V.findIndex(v => v.id === id);
+    return i < 0 ? Math.max(0, V.findIndex(v => v.stato === "attiva")) : i;
+  }
+  const activeReal = indiceAttivo();
   pill.querySelector(".version-id").textContent = V[activeReal].id;
 
   // costanti animazione
@@ -137,6 +147,8 @@ window.VERSIONI = [
     active = i;
     layout();
     settle(i);
+    // applica DAVVERO la versione (v3 "in arrivo" non e' selezionabile)
+    if (typeof window.__setVersione === "function") window.__setVersione(V[i].id);
   }
 
   /* ---- aggiorna pill + didascalia quando si "posa" su una versione ---- */
@@ -144,13 +156,15 @@ window.VERSIONI = [
     if (i === lastSettled && caption.dataset.ready) return;
     lastSettled = i;
     const v = V[i];
-    const isOn = v.stato === "attiva";
-    const stato = isOn ? t("statoAttiva") : t("statoInArrivo");
+    const inUso = v.id === versioneAttiva();
+    const inArrivo = v.stato === "in-arrivo";
+    const cls = inUso ? "on" : (inArrivo ? "soon" : "avail");
+    const label = inUso ? t("statoAttiva") : (inArrivo ? t("statoInArrivo") : t("statoDisponibile"));
     const chips = (v.assunzioni || []).map(a => `<span class="vc-chip">${tr(a)}</span>`).join("");
     const html = `
       <div class="dc-top">
         <span class="dc-name"><b>${v.id}</b> · ${tr(v.nome)}</span>
-        <span class="v-state ${isOn ? "on" : "soon"}">${stato}${v.data ? " · " + v.data : ""}</span>
+        <span class="v-state ${cls}">${label}${v.data ? " · " + v.data : ""}</span>
       </div>
       <p class="dc-note">${tr(v.note)}</p>
       ${chips ? `<div class="v-chips">${chips}</div>` : ""}`;
@@ -205,10 +219,10 @@ window.VERSIONI = [
   function open() {
     if (overlay) return;
     build();
-    active = activeReal;
+    active = indiceAttivo();
     caption.dataset.ready = "";
     layout();
-    settle(activeReal);
+    settle(active);
     requestAnimationFrame(() => overlay.classList.add("show"));
     pill.setAttribute("aria-expanded", "true");
     document.addEventListener("click", onDoc, true);

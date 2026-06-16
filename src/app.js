@@ -9,12 +9,16 @@
     lang: "it",
     tema: "carta",
     par: {
+      versione: "v2",             // v1 (congelato) | v2 (realistico) — scelta dalla gemma
       versamentoAnnuo: 3000,
+      contributoDatore: 0,         // contributo annuo datore (0 = nessuno) [v2]
       etaAttuale: 30,
       etaPensione: 67,
       profilo: "dinamico",        // rischio+rendimento accoppiati (vedi MODELLO.profili)
       volatilita: 0.15,           // DERIVATO dal profilo (sigma)
       rendimentoMedio: 0.07,      // DERIVATO dal profilo (mu)
+      fasciaReddito: "media",     // per la deduzione fiscale [v2]
+      costo: 0.01,                // costo di gestione ISC (default 1%) [v2]
       numSims: 10000,
     },
   };
@@ -66,6 +70,8 @@
     document.querySelectorAll(".lang-toggle button").forEach(b =>
       b.setAttribute("aria-pressed", b.dataset.lang === stato.lang));
     renderTesti();
+    if (typeof renderMetodologia === "function") renderMetodologia();
+    if (typeof aggiornaPill === "function") aggiornaPill();
     if (ultimaSim) renderRisultati(ultimaSim);
   }
 
@@ -80,30 +86,89 @@
   function buildForm() {
     const host = document.getElementById("formFields");
     host.innerHTML = "";
+    const v2 = stato.par.versione !== "v1";
 
-    // versamento annuo (range)
+    const group = key => {
+      const d = document.createElement("div");
+      d.className = "form-group-label";
+      d.innerHTML = `<span class="fg-tick"></span>${t(key)}`;
+      host.appendChild(d);
+    };
+
+    // --- VERSAMENTI ---
+    group("grpVersamenti");
     host.appendChild(sliderField({
       id: "versamentoAnnuo", min: 500, max: 15000, step: 250,
-      labelKey: "pVersamento", helpKey: "pVersamentoHelp",
-      fmt: v => euro(v),
+      labelKey: "pVersamento", fmt: v => euro(v),
     }));
-    // eta attuale
+    if (v2) host.appendChild(sliderField({
+      id: "contributoDatore", min: 0, max: 8000, step: 100,
+      labelKey: "pDatore", fmt: v => v === 0 ? t("nessuno") : euro(v),
+    }));
+
+    // --- ORIZZONTE TEMPORALE ---
+    group("grpTempo");
     host.appendChild(sliderField({
       id: "etaAttuale", min: 18, max: 60, step: 1,
       labelKey: "pEtaAttuale", fmt: v => v + " " + (stato.lang === "it" ? "anni" : "yrs"),
     }));
-    // eta pensione
     host.appendChild(sliderField({
       id: "etaPensione", min: 60, max: 75, step: 1,
       labelKey: "pEtaPensione", fmt: v => v + " " + (stato.lang === "it" ? "anni" : "yrs"),
     }));
-    // profilo di rischio (rischio e rendimento ACCOPPIATI)
+
+    // --- STRATEGIA ---
+    group("grpStrategia");
     host.appendChild(profiloField());
-    // numero simulazioni (segmented)
+    if (v2) {
+      host.appendChild(redditoField());
+      host.appendChild(sliderField({
+        id: "costo", min: 0.001, max: 0.03, step: 0.001,
+        labelKey: "pCosto", fmt: v => (v * 100).toFixed(1).replace(".", stato.lang === "it" ? "," : ".") + "%",
+      }));
+    }
+
+    // --- PRECISIONE ---
+    group("grpPrecisione");
     host.appendChild(segField({
       id: "numSims", labelKey: "pSimulazioni",
-      opts: [1000, 5000, 10000, 20000], fmt: v => num(v),
+      opts: v2 ? [1000, 5000, 10000, 20000] : [1000, 5000, 10000, 20000],
+      fmt: v => num(v),
     }));
+  }
+
+  // ---- fascia di reddito -> aliquota marginale per la deduzione ----
+  function redditoField() {
+    const FA = window.MonteCarlo.MODELLO.fasceReddito;
+    const order = ["bassa", "media", "alta"];
+    const wrap = document.createElement("div");
+    wrap.className = "field";
+    wrap.innerHTML = `
+      <div class="field-top"><label>${t("pReddito")}</label></div>
+      <div class="seg" id="seg_reddito"></div>
+      <div class="reddito-reveal" id="redditoReveal"></div>`;
+    const seg = wrap.querySelector(".seg");
+    const reveal = wrap.querySelector("#redditoReveal");
+    function updateReveal() {
+      const al = Math.round(FA[stato.par.fasciaReddito].aliquota * 100);
+      reveal.innerHTML = `${t("aliquotaMarginale")} <b>${al}%</b>`;
+    }
+    order.forEach(key => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = t("reddito_" + key);
+      b.setAttribute("aria-pressed", stato.par.fasciaReddito === key);
+      b.addEventListener("click", () => {
+        stato.par.fasciaReddito = key;
+        seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", "false"));
+        b.setAttribute("aria-pressed", "true");
+        updateReveal();
+        salva();
+      });
+      seg.appendChild(b);
+    });
+    updateReveal();
+    return wrap;
   }
 
   // ---- il profilo fissa la coppia (mu, sigma): coupling rischio-rendimento ----
@@ -135,8 +200,7 @@
           <span class="rr-val"><span class="js-sigma">15</span><span class="rr-unit">%</span></span>
           <span class="rr-bar gold"><i class="js-sigma-bar"></i></span>
         </div>
-      </div>
-      <div class="help">${t("pProfiloHelp")}</div>`;
+      </div>`;
     const group = wrap.querySelector("#profiloGroup");
     const muEl = wrap.querySelector(".js-mu"), sigEl = wrap.querySelector(".js-sigma");
     const muBar = wrap.querySelector(".js-mu-bar"), sigBar = wrap.querySelector(".js-sigma-bar");
@@ -159,7 +223,7 @@
       b.style.setProperty("--lvl", i);
       b.setAttribute("aria-pressed", stato.par.profilo === key);
       b.innerHTML =
-        `<span class="ro-dot"></span>` +
+        `<span class="ro-dotwrap"><span class="ro-dot"></span></span>` +
         `<span class="ro-name">${t(nameKey)}</span>` +
         `<span class="ro-sub">${t(nameKey + "Sub")}</span>`;
       b.addEventListener("click", () => {
@@ -175,7 +239,9 @@
     return wrap;
   }
 
-  function sliderField({ id, min, max, step, labelKey, helpKey, fmt }) {
+  // ---- (rimosse le icone "i": le etichette parlano da sole) ----
+
+  function sliderField({ id, min, max, step, labelKey, fmt }) {
     const wrap = document.createElement("div");
     wrap.className = "field";
     const val = stato.par[id];
@@ -184,8 +250,7 @@
         <label for="f_${id}">${t(labelKey)}</label>
         <span class="field-val" id="v_${id}">${fmt(val)}</span>
       </div>
-      <input type="range" id="f_${id}" min="${min}" max="${max}" step="${step}" value="${val}">
-      ${helpKey ? `<div class="help">${t(helpKey)}</div>` : ""}`;
+      <input type="range" id="f_${id}" min="${min}" max="${max}" step="${step}" value="${val}">`;
     const input = wrap.querySelector("input");
     const setFill = () => {
       const pct = ((stato.par[id] - min) / (max - min)) * 100;
@@ -256,33 +321,79 @@
 
   function renderRisultati(d) {
     const host = document.getElementById("results");
-
     const r = d.rendita;
-    const coeffPct = (r.coeff * 100).toFixed(2).replace(".", stato.lang === "it" ? "," : ".") + "%";
+
+    // blocco dopo gli scenari: dipende dalla versione
+    let extra;
+    if (d.versione === "v2") {
+      const ded = d.deduzione;
+      const hasDatore = d.versato.datore > 0;
+      // costo reale per euro versato dopo la deduzione (sui versamenti dell'utente)
+      const costoUnitario = d.versato.utente > 0
+        ? (d.versato.utente - ded.risparmio) / d.versato.utente : 1;
+      const costoStr = costoUnitario.toLocaleString(stato.lang === "it" ? "it-IT" : "en-IE",
+        { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      const rigaDatore = hasDatore ? `
+          <div class="rp-row">
+            <span class="rp-dot emp"></span>
+            <span class="rp-label">${t("datoreAggiunge")}</span>
+            <span class="rp-amount accent">+ ${euro(d.versato.datore)}</span>
+          </div>
+          <div class="rp-row total">
+            <span class="rp-label">${t("totaleFondo")}</span>
+            <span class="rp-amount">${euro(d.versato.totale)}</span>
+          </div>` : "";
+
+      extra = `
+        <div class="riepilogo glass reveal">
+          <span class="rp-eyebrow">${t("riepilogoTitle")}</span>
+          <div class="rp-rows">
+            <div class="rp-row">
+              <span class="rp-dot you"></span>
+              <span class="rp-label">${t("verseraiLabel")}</span>
+              <span class="rp-amount">${euro(d.versato.utente)}</span>
+            </div>
+            ${rigaDatore}
+          </div>
+          <div class="rp-saving">
+            <div class="rp-saving-fig">
+              <span class="rp-saving-num">${euro(ded.risparmio)}</span>
+              <span class="rp-saving-cap">${t("deduzioneTitle")} · ${Math.round(ded.aliquota * 100)}%</span>
+            </div>
+            <p class="rp-saving-txt">${t("costoRealeTxt", { costo: costoStr })}</p>
+          </div>
+        </div>
+        <p class="rendita-nota reveal">${t("renditaNota")}</p>`;
+    } else {
+      // v1 (congelato): semplice riga "totale versato"
+      extra = `
+        <div class="versato-row glass reveal">
+          <span>${t("versatoLabel")}</span>
+          <b>${euro(d.stat.totaleVersato)}</b>
+          <span class="sep"></span>
+          <span>${t("versatoSub", { anni: d.anni, imp: euro(stato.par.versamentoAnnuo) })}</span>
+        </div>`;
+    }
 
     host.innerHTML = `
       <section>
         <div class="section-head reveal">
           <h2>${t("scenariTitle")}</h2>
-          <p>${t("scenariSub", { n: num(d.numSims) })}</p>
+          <p>${t(d.versione === "v2" ? "scenariSubV2" : "scenariSub", { n: num(d.numSims) })}</p>
         </div>
         <div class="scenari-grid">
           ${scenarioCard("is-bad", "sfortunato", "sfortunatoSub", d.stat.sfortunato, r.sfortunato, 0)}
           ${scenarioCard("is-mid", "tipico", "tipicoSub", d.stat.tipico, r.tipico, 1)}
           ${scenarioCard("is-good", "fortunato", "fortunatoSub", d.stat.fortunato, r.fortunato, 2)}
         </div>
-        <div class="versato-row glass reveal">
-          <span>${t("versatoLabel")}</span>
-          <b>${euro(d.stat.totaleVersato)}</b>
-          <span class="sep"></span>
-          <span>${t("versatoSub", { anni: d.anni, imp: euro(stato.par.versamentoAnnuo) })}</span>
-        </div>
+        ${extra}
       </section>
 
       <section class="chart-card glass reveal">
         <div class="section-head">
           <h2>${t("fanTitle")}</h2>
-          <p>${t("fanSub")}</p>
+          <p>${t(d.versione === "v2" ? "fanSubV2" : "fanSub")}</p>
         </div>
         <div class="chart-host"><svg id="fanChart"></svg></div>
         <div class="legend">
@@ -296,25 +407,20 @@
       <section class="chart-card glass reveal">
         <div class="section-head">
           <h2>${t("histTitle")}</h2>
-          <p>${t("histSub")}</p>
+          <p>${t(d.versione === "v2" ? "histSubV2" : "histSub")}</p>
         </div>
         <div class="chart-host"><svg id="histChart"></svg></div>
       </section>`;
 
-    // disegna grafici (dopo che il DOM ha dimensioni)
-    requestAnimationFrame(() => {
-      window.Charts.disegnaFanChart(document.getElementById("fanChart"), d, t);
-      window.Charts.disegnaIstogramma(document.getElementById("histChart"), d, t);
-    });
-
-    // attiva la rivelazione allo scroll sui nuovi elementi
-    if (window.__observeReveals) window.__observeReveals(host);
-
-    // metodologia (coeff/eta dinamici)
-    const m3 = document.getElementById("m3body");
-    if (m3) m3.textContent = t("m3Body", { coeff: coeffPct, eta: d.etaPensione });
-    const m2 = document.getElementById("m2body");
-    if (m2) m2.textContent = t("m2Body", { n: num(d.numSims) });
+    // disegna i grafici e mostra i reveal. Uso setTimeout (non rAF) perche'
+    // scatta anche a tab nascosto; il layout del DOM e' gia' disponibile.
+    setTimeout(() => {
+      const f = document.getElementById("fanChart");
+      const h = document.getElementById("histChart");
+      if (f) window.Charts.disegnaFanChart(f, d, t);
+      if (h) window.Charts.disegnaIstogramma(h, d, t);
+      if (window.__observeReveals) window.__observeReveals();
+    }, 40);
   }
 
   function scenarioCard(cls, labKey, subKey, capitale, rendita, idx) {
@@ -330,6 +436,82 @@
       </div>`;
   }
 
+  // ============ METODOLOGIA (per-versione) ============
+  function getArr(key) { return (window.I18N[stato.lang] || {})[key] || (window.I18N.it[key] || []); }
+
+  function renderMetodologia() {
+    const hostM = document.getElementById("method-host");
+    if (!hostM) return;
+    const v2 = stato.par.versione !== "v1";
+    const src = "https://github.com/Andrea-Gervasoni/orizzonte";
+
+    if (!v2) {
+      // ---- v1 (CONGELATA): 4 celle concettuali + codice C++ ----
+      hostM.innerHTML = `
+        <div class="section-head reveal"><h2>${t("methodTitle")}</h2><p>${t("methodLead")}</p></div>
+        <div class="method-grid">
+          <div class="method-cell glass reveal"><div class="num">01</div><h3>${t("m1Title")}</h3><p>${t("m1Body")}</p>
+            <div class="code-block"><code><span class="c-com">// rendimento casuale ~ N(media, volatilita)</span>
+<span class="c-key">double</span> r = campana(gen);
+tot = tot * (<span class="c-key">1.0</span> + r) + versamentoXanno;</code></div>
+            <a class="source-link" href="${src}" target="_blank" rel="noopener">${t("sourceCode")}</a></div>
+          <div class="method-cell glass reveal" style="transition-delay:80ms"><div class="num">02</div><h3>${t("m2Title")}</h3><p>${t("m2Body")}</p>
+            <div class="code-block"><code><span class="c-key">for</span> (<span class="c-key">int</span> i = 0; i &lt; maxSim; i++)
+    finale[i] = montecarlo(pers);
+sort(finale, finale + maxSim);</code></div></div>
+          <div class="method-cell glass reveal" style="transition-delay:40ms"><div class="num">03</div><h3>${t("m3Title")}</h3><p>${t("m3Body")}</p></div>
+          <div class="method-cell glass reveal" style="transition-delay:120ms"><div class="num">04</div><h3>${t("m4Title")}</h3><p>${t("m4Body")}</p></div>
+        </div>
+        <p class="disclaimer reveal">${t("disclaimer")}</p>`;
+    } else {
+      // ---- v2: risultato in primo piano, dettaglio in sezione collassabile ----
+      const concetti = getArr("conceptV2").map((c, i) =>
+        `<div class="concept"><span class="c-num">0${i + 1}</span><div><h4>${c.t}</h4><p>${c.b}</p></div></div>`).join("");
+      const note = getArr("noteV2").map(n => `<li>${n}</li>`).join("");
+      hostM.innerHTML = `
+        <div class="section-head reveal"><h2>${t("methodTitleV2")}</h2><p>${t("methodLeadV2")}</p></div>
+        <details class="assunzioni glass reveal">
+          <summary><span class="as-txt">${t("assunzioniSummary")}</span><span class="as-chev">›</span></summary>
+          <div class="as-body">
+            <div class="concept-grid">${concetti}</div>
+            <div class="code-block"><code><span class="c-com">// rendimento log-normale: mai sotto -100%, volatility drag</span>
+<span class="c-key">double</span> draw = normale(mu, sigma);
+<span class="c-key">double</span> r = exp(draw - <span class="c-key">0.5</span>*sigma*sigma) - <span class="c-key">1</span>;
+<span class="c-key">double</span> g = capitale * (r - costo);        <span class="c-com">// i costi erodono</span>
+<span class="c-key">if</span> (g &gt; <span class="c-key">0</span>) g *= (<span class="c-key">1</span> - <span class="c-key">0.20</span>);            <span class="c-com">// tassa 20% annua</span>
+capitale += g + (versamento + datore)*pow(<span class="c-key">1.02</span>, i);</code></div>
+            <h4 class="note-title">${t("assunzioniListTitle")}</h4>
+            <ol class="note-list">${note}</ol>
+            <a class="source-link" href="${src}" target="_blank" rel="noopener">${t("sourceCode")}</a>
+          </div>
+        </details>
+        <p class="disclaimer reveal">${t("disclaimerV2")}</p>`;
+    }
+    if (window.__observeReveals) window.__observeReveals(hostM);
+  }
+
+  // ---- aggiorna la pill della gemma (id + meta) ----
+  function aggiornaPill() {
+    const idEl = document.querySelector("#versionPill .version-id");
+    if (idEl) idEl.textContent = stato.par.versione;
+    const metaEl = document.querySelector("#versionPill .version-meta");
+    if (metaEl) metaEl.textContent = t(stato.par.versione === "v2" ? "pillMetaV2" : "pillMetaV1");
+  }
+
+  // ---- cambia versione del modello (chiamata dalla gemma) ----
+  function setVersione(id) {
+    if (id !== "v1" && id !== "v2") return false;   // v3 "in arrivo": non selezionabile
+    if (stato.par.versione === id) return true;
+    stato.par.versione = id;
+    applicaProfilo();
+    salva();
+    buildForm();
+    renderMetodologia();
+    aggiornaPill();
+    simula(false);
+    return true;
+  }
+
   // ============ INIT ============
   function init() {
     carica();
@@ -340,6 +522,10 @@
       stato.par.profilo = window.MonteCarlo.MODELLO.profiloDefault;
     }
     applicaProfilo();
+
+    // espone il cambio versione alla gemma in fondo
+    window.__setVersione = setVersione;
+    window.__getVersione = function () { return stato.par.versione; };
 
     // lingua
     document.querySelectorAll(".lang-toggle button").forEach(b => {
@@ -362,6 +548,8 @@
     window.__liveParams = function () { return stato.par; };
 
     buildForm();
+    renderMetodologia();
+    aggiornaPill();
     applicaLingua();
     simula(false);
 
